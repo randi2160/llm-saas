@@ -1,0 +1,43 @@
+name: build-and-push
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+permissions:
+  id-token: write # needed for OIDC
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: us-east-1
+      # must match the ECR repo Terraform created: ${var.project}/${service}
+      ECR_REPO: llm-saas/platform-api
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::718277288381:role/llm-saas-dev-gha-ecr
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build and push image
+      run: |
+        IMAGE="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO }}"
+        GIT_SHA="${{ github.sha }}"
+        docker build -t "$IMAGE:latest" -t "$IMAGE:$GIT_SHA" .
+        docker push "$IMAGE:latest"
+        docker push "$IMAGE:$GIT_SHA"
+
+    - name: Print image pushed
+      run: echo "pushed ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}"
